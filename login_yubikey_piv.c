@@ -310,44 +310,60 @@ static int authenticate_against_certificates(const char *username, const unsigne
 
 		BIO_flush(mem);
 
-		if ((cert = PEM_read_bio_X509(mem, NULL, 0, NULL))) {
-			public_key = X509_get0_pubkey(cert);
-			if (public_key) {
-				public_key_type = EVP_PKEY_base_id(public_key);
-
-				// TODO: ERROR CHECK
-				EVP_MD_CTX_init(&ctx);
-				EVP_VerifyInit(&ctx, DIGEST_ALGORITHM);
-				EVP_VerifyUpdate(&ctx, data, data_len);
-
-				if (public_key_type == EVP_PKEY_EC && sign_mode == SIGNMODE_ECDSA) {
-					unsigned char *der_sig;
-
-					ECDSA_SIG ecdsa_sig;
-					size_t sig_component_len = signature_len / 2;
-					ecdsa_sig.r = BN_bin2bn(signature, sig_component_len, NULL);
-					ecdsa_sig.s = BN_bin2bn(signature + sig_component_len, sig_component_len, NULL);
-					int der_sig_len = i2d_ECDSA_SIG(&ecdsa_sig, NULL);
-
-					der_sig = (unsigned char *)malloc(der_sig_len);
-					if (!der_sig) {
-					}
-					unsigned char *der_sig_ptr = der_sig;
-					i2d_ECDSA_SIG(&ecdsa_sig, &der_sig_ptr);
-
-					verified = EVP_VerifyFinal(&ctx, der_sig, der_sig_len, public_key);
-
-					free(der_sig);
-					BN_free(ecdsa_sig.r);
-					BN_free(ecdsa_sig.s);
-				}
-			} else {
-				syslog(LOG_ERR, "No public key");
-			}
-		} else {
-			syslog(LOG_ERR, "Invalid certificate.");
+		if (!(cert = PEM_read_bio_X509(mem, NULL, 0, NULL))) {
+			syslog(LOG_ERR, "Invalid certificate found.");
+			continue;
 		}
 
+		public_key = X509_get0_pubkey(cert);
+		if (!public_key) {
+			syslog(LOG_ERR, "No public key found in certificate.");
+			continue;
+		}
+
+		public_key_type = EVP_PKEY_base_id(public_key);
+				
+		EVP_MD_CTX_init(&ctx);
+		if (!EVP_VerifyInit(&ctx, DIGEST_ALGORITHM)) goto failed1;
+		if (!EVP_VerifyUpdate(&ctx, data, data_len)) goto failed1;
+
+		if (public_key_type == EVP_PKEY_EC && sign_mode == SIGNMODE_ECDSA) {
+			unsigned char *der_sig;
+
+			ECDSA_SIG ecdsa_sig;
+			size_t sig_component_len = signature_len / 2;
+			
+			ecdsa_sig.r = BN_bin2bn(signature, sig_component_len, NULL);
+			if (!ecdsa_sig.r) {
+				syslog(LOG_ERR, "BN_bin2bn(): error.");
+				goto failed1;
+			}
+
+			ecdsa_sig.s = BN_bin2bn(signature + sig_component_len, sig_component_len, NULL);
+			if (!ecdsa_sig.s) {
+				syslog(LOG_ERR, "BN_bin2bn(): error.");
+				goto failed2;
+			}
+			int der_sig_len = i2d_ECDSA_SIG(&ecdsa_sig, NULL);
+
+			der_sig = (unsigned char *)malloc(der_sig_len);
+			if (!der_sig) {
+				syslog(LOG_ERR, "Out of memory.");
+				goto failed3;
+			}
+
+			unsigned char *der_sig_ptr = der_sig;
+			i2d_ECDSA_SIG(&ecdsa_sig, &der_sig_ptr);
+
+			verified = EVP_VerifyFinal(&ctx, der_sig, der_sig_len, public_key);
+
+			free(der_sig);
+failed3:
+			BN_free(ecdsa_sig.s);
+failed2:
+			BN_free(ecdsa_sig.r);
+		}
+failed1:
 		BIO_free(mem);
 	}
 failed0:
