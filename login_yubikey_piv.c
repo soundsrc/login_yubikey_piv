@@ -169,6 +169,8 @@ static int yubikey_sign_challenge(const uint8_t *challenge, size_t challenge_len
 		goto failed4;
 	}
 
+	p11->C_FindObjectsFinal(session);
+
 	if (num_keys != 1) {
 		fprintf(stderr, "No private key in slot.\n");
 		goto failed4;
