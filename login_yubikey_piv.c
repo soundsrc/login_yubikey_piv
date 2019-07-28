@@ -64,7 +64,11 @@ static int yubikey_sign_challenge(const uint8_t *challenge, size_t challenge_len
 	char password_buf[256];
 
 	CK_OBJECT_CLASS pk_class = CKO_PRIVATE_KEY;
-	CK_ATTRIBUTE find_private_key_attributes[] = {{CKA_CLASS, &pk_class, sizeof(pk_class)}};
+	char match_label[] = "PIV AUTH key";
+	CK_ATTRIBUTE find_private_key_attributes[] = {
+		{CKA_CLASS, &pk_class, sizeof(pk_class)},
+		{CKA_LABEL, match_label, sizeof(match_label) - 1}
+	};
 
 	CK_KEY_TYPE key_type;
 	CK_ATTRIBUTE find_key_type_attributes[] = {{CKA_KEY_TYPE, &key_type, sizeof(key_type)}};
