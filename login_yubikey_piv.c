@@ -37,8 +37,9 @@
 
 #define AUTHORIZED_KEY_PATH "/.yubikey/authorized_keys"
 
-#define DIGEST_ALGORITHM EVP_sha256()
+#define CHALLENGE_LENGTH 32
 
+#define DIGEST_ALGORITHM EVP_sha256()
 #define DIGEST_LENGTH SHA256_DIGEST_LENGTH
 
 enum LoginMode { LOGINMODE_LOGIN, LOGINMODE_CHALLENGE, LOGINMODE_RESPONSE };
@@ -381,7 +382,7 @@ failed0:
 static void print_usage() { fprintf(stderr, "usage: login_yubikey_piv [-d] [-v] [-s login] <username>\n"); }
 
 int main(int argc, char *argv[]) {
-	uint8_t challenge[256];
+	uint8_t challenge[CHALLENGE_LENGTH];
 	uint8_t signature[512];
 	size_t signature_len = sizeof(signature);
 	enum SignMode sign_mode;
