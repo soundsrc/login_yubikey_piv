@@ -31,6 +31,7 @@
 #include <openssl/sha.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/objects.h>
 #include <p11-kit/pkcs11.h>
 
 #define COUNT_OF(x) (sizeof(x) / sizeof(x[0]))
@@ -46,11 +47,61 @@ enum LoginMode { LOGINMODE_LOGIN, LOGINMODE_CHALLENGE, LOGINMODE_RESPONSE };
 
 enum SignMode { SIGNMODE_RSA, SIGNMODE_ECDSA };
 
+
+/*
+ * Adapted from https://github.com/libressl-portable/openbsd/blob/master/src/lib/libcrypto/rsa/rsa_sign.c
+ *
+ * encode_pkcs1 encodes a DigestInfo prefix of hash `type' and digest `m', as
+ * described in EMSA-PKCS-v1_5-ENCODE, RFC 8017 section 9. step 2. This
+ * encodes the DigestInfo (T and tLen) but does not add the padding.
+ *
+ * On success, it returns one and sets `*out' to a newly allocated buffer
+ * containing the result and `*out_len' to its length.  Freeing `*out' is
+ * the caller's responsibility. Failure is indicated by zero.
+ */
+static int
+encode_pkcs1(unsigned char **out, int *out_len, int type,
+    const unsigned char *m, unsigned int m_len)
+{
+	X509_SIG sig;
+	X509_ALGOR algor;
+	ASN1_TYPE parameter;
+	ASN1_OCTET_STRING digest;
+	uint8_t *der = NULL;
+	int len;
+
+	sig.algor = &algor;
+	if ((sig.algor->algorithm = OBJ_nid2obj(type)) == NULL) {
+		/* RSAerror(RSA_R_UNKNOWN_ALGORITHM_TYPE); */
+		return 0;
+	}
+	if (sig.algor->algorithm->length == 0) {
+		/* RSAerror(
+		    RSA_R_THE_ASN1_OBJECT_IDENTIFIER_IS_NOT_KNOWN_FOR_THIS_MD); */
+		return 0;
+	}
+	parameter.type = V_ASN1_NULL;
+	parameter.value.ptr = NULL;
+	sig.algor->parameter = &parameter;
+
+	sig.digest = &digest;
+	sig.digest->data = (unsigned char*)m; /* TMP UGLY CAST */
+	sig.digest->length = m_len;
+
+	if ((len = i2d_X509_SIG(&sig, &der)) < 0)
+		return 0;
+
+	*out = der;
+	*out_len = len;
+
+	return 1;
+}
+
 /*
  * Trigger the yubikey to sign the challenge and produce a signature.
  * A PIN prompt will also be presented to unlock the yubikey.
  */
-static int yubikey_sign_challenge(const uint8_t *challenge, size_t challenge_len, uint8_t *signature,
+static int yubikey_sign_challenge(uint8_t *challenge, size_t challenge_len, uint8_t *signature,
 				  size_t *signature_len, enum SignMode *sign_mode) {
 	int ret = 0;
 
@@ -76,13 +127,12 @@ static int yubikey_sign_challenge(const uint8_t *challenge, size_t challenge_len
 	CK_ULONG num_keys;
 
 	CK_OBJECT_HANDLE private_key;
-	CK_MECHANISM mechanisms = {CKM_ECDSA, NULL_PTR};
+	CK_MECHANISM mechanism;
 
 	CK_TOKEN_INFO token_info;
-
-	CK_BYTE challenge_digest[DIGEST_LENGTH];
-	EVP_MD_CTX ctx;
-	int challenge_digest_len;
+	
+	unsigned char *encoded_pkcs1;
+	unsigned int encoded_pkcs1_len;
 
 	p11 = NULL;
 	if (C_GetFunctionList(&p11) != CKR_OK) {
@@ -192,39 +242,52 @@ static int yubikey_sign_challenge(const uint8_t *challenge, size_t challenge_len
 	switch (key_type) {
 	case CKK_ECDSA:
 		*sign_mode = SIGNMODE_ECDSA;
+		mechanism.mechanism = CKM_ECDSA;
+		mechanism.pParameter = NULL_PTR;
+		mechanism.ulParameterLen = 0ul;
 		break;
 	case CKK_RSA:
 		*sign_mode = SIGNMODE_RSA;
+		mechanism.mechanism = CKM_RSA_PKCS;
+		mechanism.pParameter = NULL_PTR;
+		mechanism.ulParameterLen = 0ul;
 		break;
 	default:
 		syslog(LOG_ERR, "Unsupported private key type.");
 		goto failed4;
 	}
 
-	EVP_MD_CTX_init(&ctx);
-	if (!EVP_DigestInit(&ctx, DIGEST_ALGORITHM)) {
-		syslog(LOG_ERR, "EVP_DigestInit(): Digest failure.");
-		goto failed4;
-	}
-	if (!EVP_DigestUpdate(&ctx, challenge, challenge_len)) {
-		syslog(LOG_ERR, "EVP_DigestUpdate(): Digest failure.");
-		goto failed4;
-	}
-	if (!EVP_DigestFinal(&ctx, challenge_digest, &challenge_digest_len)) {
-		syslog(LOG_ERR, "EVP_DigestFinal: Digest failure.");
-		goto failed4;
-	}
-
-	rc = p11->C_SignInit(session, &mechanisms, private_key);
+	rc = p11->C_SignInit(session, &mechanism, private_key);
 	if (rc != CKR_OK) {
 		syslog(LOG_ERR, "C_SignInit(): Failed to initialize key signing.");
 		goto failed4;
 	}
 
-	rc = p11->C_Sign(session, challenge_digest, challenge_digest_len, signature, signature_len);
-	if (rc != CKR_OK) {
-		syslog(LOG_ERR, "C_Sign(): Failed to sign challenge.");
-		goto failed4;
+	if (mechanism.mechanism == CKM_RSA_PKCS) {
+
+		encoded_pkcs1 = NULL;
+		if (!encode_pkcs1(&encoded_pkcs1, &encoded_pkcs1_len, EVP_MD_type(DIGEST_ALGORITHM), challenge, challenge_len)) {
+			syslog(LOG_ERR, "encode_pkcs1(): PKCS encoding failed.");
+			goto failed4;
+		}
+
+		rc = p11->C_Sign(session, encoded_pkcs1, encoded_pkcs1_len, signature, signature_len);
+		if (rc != CKR_OK) {
+			free(encoded_pkcs1);
+			syslog(LOG_ERR, "C_Sign(): Failed to sign challenge.");
+			goto failed4;
+		}
+
+		free(encoded_pkcs1);
+
+	} else {
+
+		rc = p11->C_Sign(session, challenge, challenge_len, signature, signature_len);
+		if (rc != CKR_OK) {
+			syslog(LOG_ERR, "C_Sign(): Failed to sign challenge.");
+			goto failed4;
+		}
+
 	}
 
 	ret = 1;
@@ -241,7 +304,7 @@ failed0:
 	return ret;
 }
 
-static int authenticate_against_certificates(const char *username, const unsigned char *data, size_t data_len,
+static int authenticate_against_certificates(const char *username, const unsigned char *challenge, size_t challenge_len,
 					     const unsigned char *signature, size_t signature_len,
 					     enum SignMode sign_mode) {
 	struct passwd *pw;
@@ -252,8 +315,14 @@ static int authenticate_against_certificates(const char *username, const unsigne
 	EVP_PKEY *public_key;
 	int public_key_type;
 	FILE *fp;
-	EVP_MD_CTX ctx;
+	EVP_PKEY_CTX *pkey_ctx;
 	int verified = 0;
+
+	ECDSA_SIG ecdsa_sig;
+	int der_sig_len;
+	size_t sig_component_len;
+	unsigned char *der_sig;
+	unsigned char *der_sig_ptr;
 
 	static const char begin_tag[] = "-----BEGIN CERTIFICATE-----";
 	static const char end_tag[] = "-----END CERTIFICATE-----";
@@ -319,57 +388,86 @@ static int authenticate_against_certificates(const char *username, const unsigne
 
 		if (!(cert = PEM_read_bio_X509(mem, NULL, 0, NULL))) {
 			syslog(LOG_ERR, "Invalid certificate found.");
-			continue;
+			goto failed1;
 		}
 
 		public_key = X509_get0_pubkey(cert);
 		if (!public_key) {
 			syslog(LOG_ERR, "No public key found in certificate.");
-			continue;
+			goto failed1;
 		}
 
 		public_key_type = EVP_PKEY_base_id(public_key);
-				
-		EVP_MD_CTX_init(&ctx);
-		if (!EVP_VerifyInit(&ctx, DIGEST_ALGORITHM)) goto failed1;
-		if (!EVP_VerifyUpdate(&ctx, data, data_len)) goto failed1;
 
-		if (public_key_type == EVP_PKEY_EC && sign_mode == SIGNMODE_ECDSA) {
-			unsigned char *der_sig;
+		pkey_ctx = EVP_PKEY_CTX_new(public_key, NULL);
+		
+		if(EVP_PKEY_verify_init(pkey_ctx) <= 0) {
+			syslog(LOG_ERR, "EVP_PKEY_verify_init(): Fail to init verify.");
+			goto failed2;
+		}
 
-			ECDSA_SIG ecdsa_sig;
-			size_t sig_component_len = signature_len / 2;
+		if (public_key_type == EVP_PKEY_RSA && sign_mode == SIGNMODE_RSA) {
+
+			if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) <= 0) {
+				syslog(LOG_ERR, "EVP_PKEY_CTX_set_rsa_padding(): RSA set padding failed.");
+				goto failed2;
+			}
+
+			if (EVP_PKEY_CTX_set_signature_md(pkey_ctx, DIGEST_ALGORITHM) <= 0) {
+				syslog(LOG_ERR, "EVP_PKEY_CTX_set_rsa_padding(): RSA set padding failed.");
+				goto failed2;
+			}
+
+			verified = EVP_PKEY_verify(pkey_ctx, signature, signature_len, challenge, challenge_len);
+
+			ERR_clear_error();
+			if (verified != 1 && verified != 0) {
+				syslog(LOG_ERR, "Verify error: %s", ERR_error_string(ERR_get_error(), NULL));
+				verified = 0;
+			}
+			
+		} else if (public_key_type == EVP_PKEY_EC && sign_mode == SIGNMODE_ECDSA) {
+			
+			sig_component_len = signature_len / 2;
 			
 			ecdsa_sig.r = BN_bin2bn(signature, sig_component_len, NULL);
 			if (!ecdsa_sig.r) {
 				syslog(LOG_ERR, "BN_bin2bn(): error.");
-				goto failed1;
+				goto failed2;
 			}
 
 			ecdsa_sig.s = BN_bin2bn(signature + sig_component_len, sig_component_len, NULL);
 			if (!ecdsa_sig.s) {
 				syslog(LOG_ERR, "BN_bin2bn(): error.");
-				goto failed2;
+				goto failed3;
 			}
-			int der_sig_len = i2d_ECDSA_SIG(&ecdsa_sig, NULL);
+			der_sig_len = i2d_ECDSA_SIG(&ecdsa_sig, NULL);
 
 			der_sig = (unsigned char *)malloc(der_sig_len);
 			if (!der_sig) {
 				syslog(LOG_ERR, "Out of memory.");
-				goto failed3;
+				goto failed4;
 			}
 
-			unsigned char *der_sig_ptr = der_sig;
+			der_sig_ptr = der_sig;
 			i2d_ECDSA_SIG(&ecdsa_sig, &der_sig_ptr);
 
-			verified = EVP_VerifyFinal(&ctx, der_sig, der_sig_len, public_key);
+			ERR_clear_error();
+			verified = EVP_PKEY_verify(pkey_ctx, der_sig, der_sig_len, challenge, challenge_len);
+			if (verified != 1 && verified != 0) {
+				syslog(LOG_ERR, "Verify error: %s", ERR_error_string(ERR_get_error(), NULL));
+				verified = 0;
+			}
 
 			free(der_sig);
-failed3:
+failed4:
 			BN_free(ecdsa_sig.s);
-failed2:
+failed3:
 			BN_free(ecdsa_sig.r);
 		}
+
+failed2:
+		EVP_PKEY_CTX_free(pkey_ctx);
 failed1:
 		BIO_free(mem);
 	}
