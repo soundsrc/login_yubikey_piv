@@ -538,7 +538,6 @@ int main(int argc, char *argv[]) {
 	}
 
 	if (login_mode != LOGINMODE_LOGIN) {
-		fprintf(f, "%s\n", BI_REJECT);
 		goto failed1;
 	}
 
@@ -564,5 +563,8 @@ int main(int argc, char *argv[]) {
 failed1:
 	closelog();
 failed0:
+	if (ret != EXIT_SUCCESS) {
+		fprintf(f, "%s\n", BI_REJECT);
+	}
 	return ret;
 }
