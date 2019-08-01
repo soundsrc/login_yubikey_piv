@@ -563,7 +563,7 @@ int main(int argc, char *argv[]) {
 failed1:
 	closelog();
 failed0:
-	if (ret != EXIT_SUCCESS) {
+	if (f && ret != EXIT_SUCCESS) {
 		fprintf(f, "%s\n", BI_REJECT);
 	}
 	return ret;
