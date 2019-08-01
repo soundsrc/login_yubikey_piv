@@ -7,5 +7,7 @@ LDFLAGS=	-Wl,-rpath /usr/local/lib/pkcs11
 LDADD=		/usr/local/lib/pkcs11/opensc-pkcs11.so -lssl -lcrypto
 
 BINDIR=		/usr/libexec/auth
+BINOWN=		root
+BINGRP=		auth
 
 .include <bsd.prog.mk>
