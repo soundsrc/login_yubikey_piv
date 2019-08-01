@@ -1,22 +1,10 @@
-CC=clang
-CFLAGS=-O0 -g -Wall -Werror
-CPPFLAGS=-I/usr/local/include -I/usr/local/include/p11-kit-1
-LDFLAGS=-Wl,-rpath /usr/local/lib/pkcs11
-LIBS=/usr/local/lib/pkcs11/opensc-pkcs11.so -lssl -lcrypto
-prefix=/usr/local
-DESTDIR=
+PROG=		login_yubikey_piv
+SRCS=		login_yubikey_piv.c
 
-OBJS=login_yubikey_piv.o
+CFLAGS=		-O2 -I/usr/local/include -I/usr/local/include/p11-kit-1 -Wall -Werror
+LDFLAGS=	-Wl,-rpath /usr/local/lib/pkcs11
+LDADD=		/usr/local/lib/pkcs11/opensc-pkcs11.so -lssl -lcrypto
 
-all: login_yubikey_piv
+BINDIR=		/usr/libexec/auth
 
-login_yubikey_piv: $(OBJS)
-	$(CC) -o "$@" $(OBJS) $(LDFLAGS) $(LIBS)
-
-install: login_yubikey_piv
-	install -D login_yubikey_piv $(DESTDIR)$(prefix)/libexec/auth/login_yubikey_piv
-
-.c.o:
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) "$<" -o "$@"
-clean:
-	rm login_yubikey_piv *.o
+.include <bsd.prog.mk>
