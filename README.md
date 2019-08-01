@@ -3,7 +3,7 @@
 * IN DEVELOPMENT, DO NOT USE *
 
 YubiKey login authentication for OpenBSD using the PIV interface.
-This is mainly for personal use, no support will be provided,
+This is mainly for personal use, no support will be provided.
 
 # Installation
 
