@@ -7,10 +7,12 @@ LIBS=/usr/local/lib/pkcs11/opensc-pkcs11.so -lssl -lcrypto
 
 OBJS=login_yubikey_piv.o
 
+all: login_yubikey_piv
+
 login_yubikey_piv: $(OBJS)
 	$(CC) -o "$@" $(OBJS) $(LDFLAGS) $(LIBS)
 
 .c.o:
 	$(CC) -c $(CFLAGS) $(CPPFLAGS) "$<" -o "$@"
 clean:
-	rm *.o
+	rm login_yubikey_piv *.o
