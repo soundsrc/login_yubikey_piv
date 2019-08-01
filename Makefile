@@ -10,4 +10,10 @@ BINDIR=		/usr/libexec/auth
 BINOWN=		root
 BINGRP=		auth
 
+MANDIR=		${PREFIX}/man/man
+
+beforeinstall:
+	${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m ${DIRMODE} ${DESTDIR}${BINDIR}
+	${INSTALL} -d -o ${MANOWN} -g ${MANGRP} -m ${DIRMODE} ${DESTDIR}${MANDIR}8
+
 .include <bsd.prog.mk>
