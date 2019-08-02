@@ -49,7 +49,7 @@ yubikey before the authentication can proceed.
 .Sh AUTHENTICATION
 Authentication works using a public key authentication method based 
 on public-key cryptography. The user's private key on the yubikey is
-used to authenticated against the public key certificate to prove the user's credentials.
+used to authenticate against the public key certificate to prove the user's credentials.
 .Pp
 The file
 .Em ~/.yubikey/authorized_keys
@@ -58,7 +58,7 @@ log in. When the user attempts to login, the
 .Nm
 program attempts to get the yubikey to perform a digital signature
 which can then be verified by one of the certificates in the list.
-If verfied successfully, the user becomes authenticated.
+If verified successfully, the user becomes authenticated.
 .Sh FILES
 .Bl -tag -width Ds -compact
 .Pp
