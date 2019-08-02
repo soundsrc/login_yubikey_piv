@@ -67,7 +67,7 @@ Dump out a certificate from slot 9a.
 yubico-piv-tool -aread-cert -s9a
 ```
 
-On the host server, append the certiciate to:
+On the host server, append the certificate to:
 
 ```
 $HOME/.yubikey/authorized_keys
