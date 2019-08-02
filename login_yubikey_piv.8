@@ -1,0 +1,73 @@
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 1 2019 $
+.Dt LOGIN_YUBIKEY_PIV 8
+.Os
+.Sh NAME
+.Nm login_yubikey_piv
+.Nd login authentication using Yubikey PIV
+.Sh SYNOPSIS
+.Nm login_yubikey_piv
+.Op Fl s Ar service
+.Ar user
+.Sh DESCRIPTION
+.Nm
+is called by
+.Xr login 1 ,
+.Xr su 1 ,
+.Xr ftpd 8 ,
+and others to authenticate the
+.Ar user
+with the Yubikey through the PIV interface. The yubikey is expected to
+have a private key and certificate loaded in slot 9a in the PIV applet.
+.Pp
+The
+.Ar user
+argument is the login name of the user to be authenticated.
+.Pp
+The
+.Ar service
+argument specifies which protocol to use with the
+invoking program. Only the
+.Em login
+protocol is supported.
+.Pp
+.Nm
+will prompt the user for a PIN. Depending on the yubikey touchmode,
+the user may be required to press the touch button on the
+yubikey before the authentication can proceed.
+.Sh AUTHENTICATION
+Authentication works using a public key authentication method based 
+on public-key cryptography. The user's private key on the yubikey is
+used to authenticated against the public key certificate to prove the user's credentials.
+.Pp
+The file
+.Em ~/.yubikey/authorized_keys
+contains a list of certificates of yubikeys which are permitted to
+log in. When the user attempts to login, the
+.Nm
+program attempts to get the yubikey to perform a digital signature
+which can then be verified by one of the certificates in the list.
+If verfied successfully, the user becomes authenticated.
+.Sh FILES
+.Bl -tag -width Ds -compact
+.Pp
+.It Pa ~/.yubikey/authorized_keys
+List of certificates for authenticating against the yubikey.
+Certificates should be in the X509 format and containing a
+public key.
+.Sh SEE ALSO
+.Xr login 1 ,
+.Xr passwd 1 ,
+.Xr su 1 ,
+.Xr login.conf 5 ,
