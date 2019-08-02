@@ -54,7 +54,9 @@ If using the YubiKey Manager tool, use the user interface to
 generate a key on slot 9a (Authentication Slot).
 
 Alternatively, follow steps 1-3 in the SSH with PIV guide from Yubico:
-https://developers.yubico.com/PIV/Guides/SSH_with_PIV_and_PKCS11.html
+
+ * https://developers.yubico.com/PIV/Guides/SSH_with_PIV_and_PKCS11.html
+
 The same keys used for SSH can also be used here.
 
 # Setting up authentication
