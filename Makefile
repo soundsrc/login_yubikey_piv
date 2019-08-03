@@ -12,6 +12,5 @@ BINGRP=		auth
 
 beforeinstall:
 	${INSTALL} -d -o ${BINOWN} -g ${BINGRP} -m ${DIRMODE} ${DESTDIR}${BINDIR}
-	echo $(MANDIR)
 
 .include <bsd.prog.mk>
