@@ -28,8 +28,8 @@ is called by
 .Xr ftpd 8 ,
 and others to authenticate the
 .Ar user
-with the Yubikey through the PIV interface. The yubikey is expected to
-have a private key and certificate loaded in slot 9a in the PIV applet.
+with the Yubikey through the PIV interface. The yubikey is expected to have been
+setup with a private key and certificate loaded in slot 9a in the PIV applet.
 .Pp
 The
 .Ar user
@@ -37,35 +37,33 @@ argument is the login name of the user to be authenticated.
 .Pp
 The
 .Ar service
-argument specifies which protocol to use with the
-invoking program. Only the
+argument specifies which protocol to use with the invoking program. Only the
 .Em login
 protocol is supported.
 .Pp
 .Nm
-will prompt the user for a PIN. Depending on the yubikey touchmode,
-the user may be required to press the touch button on the
-yubikey before the authentication can proceed.
+will prompt the user for a PIN. Depending on the yubikey touchmode, the user may
+be required to press the touch button on the yubikey before the authentication
+can proceed.
 .Sh AUTHENTICATION
-Authentication works using a public key authentication method based 
-on public-key cryptography. The user's private key on the yubikey is
-used to authenticate against the public key certificate to prove the user's credentials.
+Authentication is performed using a public key authentication method based on
+public-key cryptography. The user's private key on the yubikey is used to
+authenticate against the public key to prove the user's credentials.
 .Pp
 The file
 .Em ~/.yubikey/authorized_keys
-contains a list of certificates of yubikeys which are permitted to
-log in. When the user attempts to login, the
+contains a list of public keys corresponding to the yubikeys which are permitted
+to log in. When the user attempts to log in, the
 .Nm
-program attempts to get the yubikey to perform a digital signature
-which can then be verified by one of the certificates in the list.
-If verified successfully, the user becomes authenticated.
+program obtains a digital signature from the connected yubikey. This signature
+is then verified against one of the public keys in the list. If verified
+successfully, the user becomes authenticated.
 .Sh FILES
 .Bl -tag -width Ds -compact
 .Pp
 .It Pa ~/.yubikey/authorized_keys
-List of certificates for authenticating against the yubikey.
-Certificates should be in the X509 format and containing a
-public key.
+List of public keys for authenticating against the yubikey.
+Public keys should be in the PEM format.
 .El
 .Sh SEE ALSO
 .Xr login 1 ,

@@ -61,13 +61,14 @@ The same keys used for SSH can also be used here.
 
 # Setting up authentication
 
-Dump out a certificate from slot 9a.
+Extract a public key from slot 9a.
 
 ```
-yubico-piv-tool -aread-cert -s9a
+yubico-piv-tool -aread-cert -s9a > certificate.pem
+openssl x509 -in certificate.pem -pubkey -noout > public.pem
 ```
 
-On the host server, append the certificate to:
+On the host server, append the public key to:
 
 ```
 $HOME/.yubikey/authorized_keys

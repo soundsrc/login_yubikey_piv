@@ -19,12 +19,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <syslog.h>
 #include <unistd.h>
 #include <dlfcn.h>
 #include <login_cap.h>
 #include <pwd.h>
 #include <readpassphrase.h>
+#include <openssl/asn1.h>
 #include <openssl/bn.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
@@ -309,7 +311,6 @@ static int authenticate_against_certificates(const char *username, const unsigne
 	char authorized_key_path[1024];
 	char line[1024];
 	BIO *mem;
-	X509 *cert;
 	EVP_PKEY *public_key;
 	int public_key_type;
 	FILE *fp;
@@ -322,8 +323,8 @@ static int authenticate_against_certificates(const char *username, const unsigne
 	unsigned char *der_sig;
 	unsigned char *der_sig_ptr;
 
-	static const char begin_tag[] = "-----BEGIN CERTIFICATE-----";
-	static const char end_tag[] = "-----END CERTIFICATE-----";
+	static const char begin_tag[] = "-----BEGIN PUBLIC KEY-----";
+	static const char end_tag[] = "-----END PUBLIC KEY-----";
 
 	// Determine the path to $HOME/.yubikey/authorized_keys
 	// TODO: permission check
@@ -364,6 +365,7 @@ static int authenticate_against_certificates(const char *username, const unsigne
 	// authenticate
 	mem = NULL;
 	while (verified != 1 && fgets(line, sizeof(line), fp)) {
+
 		// skip any lines that does not begin with the tag
 		if (strncmp(line, begin_tag, sizeof(begin_tag) - 1))
 			continue;
@@ -384,36 +386,35 @@ static int authenticate_against_certificates(const char *username, const unsigne
 
 		BIO_flush(mem);
 
-		if (!(cert = PEM_read_bio_X509(mem, NULL, 0, NULL))) {
-			syslog(LOG_ERR, "Invalid certificate found.");
-			goto failed1;
-		}
-
-		public_key = X509_get0_pubkey(cert);
+		public_key = PEM_read_bio_PUBKEY(mem, NULL, NULL, NULL);
 		if (!public_key) {
-			syslog(LOG_ERR, "No public key found in certificate.");
+			syslog(LOG_ERR, "Invalid public key found.");
 			goto failed1;
 		}
 
 		public_key_type = EVP_PKEY_base_id(public_key);
 
 		pkey_ctx = EVP_PKEY_CTX_new(public_key, NULL);
+		if (!pkey_ctx) {
+			syslog(LOG_ERR, "Invalid public key found.");
+			goto failed2;
+		}
 		
 		if(EVP_PKEY_verify_init(pkey_ctx) <= 0) {
 			syslog(LOG_ERR, "EVP_PKEY_verify_init(): Fail to init verify.");
-			goto failed2;
+			goto failed3;
 		}
 
 		if (public_key_type == EVP_PKEY_RSA && sign_mode == SIGNMODE_RSA) {
 
 			if (EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) <= 0) {
 				syslog(LOG_ERR, "EVP_PKEY_CTX_set_rsa_padding(): RSA set padding failed.");
-				goto failed2;
+				goto failed3;
 			}
 
 			if (EVP_PKEY_CTX_set_signature_md(pkey_ctx, DIGEST_ALGORITHM) <= 0) {
 				syslog(LOG_ERR, "EVP_PKEY_CTX_set_rsa_padding(): RSA set padding failed.");
-				goto failed2;
+				goto failed3;
 			}
 
 			verified = EVP_PKEY_verify(pkey_ctx, signature, signature_len, challenge, challenge_len);
@@ -431,20 +432,20 @@ static int authenticate_against_certificates(const char *username, const unsigne
 			ecdsa_sig.r = BN_bin2bn(signature, sig_component_len, NULL);
 			if (!ecdsa_sig.r) {
 				syslog(LOG_ERR, "BN_bin2bn(): error.");
-				goto failed2;
+				goto failed3;
 			}
 
 			ecdsa_sig.s = BN_bin2bn(signature + sig_component_len, sig_component_len, NULL);
 			if (!ecdsa_sig.s) {
 				syslog(LOG_ERR, "BN_bin2bn(): error.");
-				goto failed3;
+				goto failed4;
 			}
 			der_sig_len = i2d_ECDSA_SIG(&ecdsa_sig, NULL);
 
 			der_sig = (unsigned char *)malloc(der_sig_len);
 			if (!der_sig) {
 				syslog(LOG_ERR, "Out of memory.");
-				goto failed4;
+				goto failed5;
 			}
 
 			der_sig_ptr = der_sig;
@@ -458,14 +459,16 @@ static int authenticate_against_certificates(const char *username, const unsigne
 			}
 
 			free(der_sig);
-failed4:
+failed5:
 			BN_free(ecdsa_sig.s);
-failed3:
+failed4:
 			BN_free(ecdsa_sig.r);
 		}
 
-failed2:
+failed3:
 		EVP_PKEY_CTX_free(pkey_ctx);
+failed2:
+		EVP_PKEY_free(public_key);
 failed1:
 		BIO_free(mem);
 	}
